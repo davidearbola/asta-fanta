@@ -1,0 +1,4305 @@
+# Specifica progetto — Fantacalcio Auction Assistant
+
+## Obiettivo
+
+Crea una piccola web app **mobile-first**, velocissima da usare durante un'asta di Fantacalcio, partendo dai dati già preparati nel file Excel aggiornato l'11/09/2026.
+
+L'app deve sostituire il file Excel durante l'asta. Deve essere una **Single Page Application statica**, senza backend e senza database remoto, deployabile gratuitamente su **GitHub Pages**.
+
+Il progetto deve essere pronto per essere clonato, eseguito con `npm install && npm run dev` e deployato con GitHub Actions.
+
+---
+
+## Vincoli tecnici obbligatori
+
+- Vue 3
+- Vite
+- TypeScript
+- Composition API
+- Vue Router con **`createWebHashHistory()`** per evitare problemi di routing su GitHub Pages
+- Pinia per lo stato globale
+- Nessun backend
+- Nessun database
+- Nessuna autenticazione
+- Nessuna chiamata API necessaria per il funzionamento
+- Nessuno scraping runtime
+- Persistenza stato tramite `localStorage`
+- Seed dei giocatori incluso nel repository
+- Deve funzionare bene da smartphone durante l'asta
+- Deve funzionare anche se la pagina viene ricaricata
+- Deve poter esportare/importare un backup JSON
+- Preferire CSS semplice / CSS modules / scoped CSS; evitare framework UI pesanti
+- Dipendenze ridotte al minimo
+
+Non usare Firebase, Supabase, Appwrite o servizi analoghi.
+
+---
+
+## Strategia di persistenza
+
+Usa due livelli distinti:
+
+1. **Dati statici di base**
+   - salvati in `src/data/players.ts` oppure `src/data/players.json`
+   - salvati in `src/data/updates.ts`
+   - versionati con Git
+   - rappresentano la wishlist preparata prima dell'asta
+
+2. **Stato dell'asta**
+   - salvato in `localStorage`
+   - contiene acquisti, prezzi, giocatori presi dagli avversari, note e preferenze UI
+   - chiave suggerita: `fanta-auction:v1:state`
+
+Aggiungi inoltre:
+- pulsante **Esporta backup**
+- pulsante **Importa backup**
+- pulsante **Reset asta** con conferma esplicita
+- pulsante **Ripristina dati iniziali**
+
+Il backup deve essere un semplice file JSON.
+
+### Regola importante per gli aggiornamenti
+
+I dati statici dei giocatori possono essere aggiornati in futuro modificando il repository.
+
+Quando cambia `seedVersion`, **non cancellare automaticamente lo stato dell'asta dell'utente**. Gli acquisti e i prezzi salvati nel browser devono rimanere.
+
+---
+
+## Configurazione lega
+
+Usare questi valori come default, ma strutturare il codice in modo che siano facilmente modificabili in futuro.
+
+```json
+{
+  "seedVersion": "2026-09-11",
+  "league": {
+    "participants": 8,
+    "budget": 500,
+    "mode": "Classic",
+    "defenseModifier": true,
+    "roster": {
+      "P": 3,
+      "D": 8,
+      "C": 8,
+      "A": 6
+    },
+    "budgetTargets": {
+      "P": 35,
+      "D": 80,
+      "C": 100,
+      "A": 285
+    },
+    "budgetRanges": {
+      "P": [
+        30,
+        40
+      ],
+      "D": [
+        75,
+        90
+      ],
+      "C": [
+        95,
+        110
+      ],
+      "A": [
+        275,
+        300
+      ]
+    },
+    "minimumBid": 1
+  }
+}
+```
+
+---
+
+# UX principale
+
+L'app deve essere progettata principalmente per essere utilizzata da telefono durante un'asta veloce.
+
+La schermata principale deve permettere di capire immediatamente:
+
+- crediti iniziali
+- crediti spesi
+- crediti residui
+- slot acquistati
+- slot mancanti
+- spesa per ruolo
+- budget target per ruolo
+- massimo rilancio matematicamente possibile sul prossimo giocatore
+- elenco giocatori ancora disponibili
+- giocatori già acquistati da me
+- giocatori già acquistati dagli altri
+
+Usa testi e pulsanti grandi abbastanza per l'utilizzo da smartphone.
+
+---
+
+# Navigazione
+
+Usare una bottom navigation su mobile e una sidebar/header su desktop.
+
+Rotte:
+
+- `/` — Asta Live
+- `/wishlist` — Wishlist completa
+- `/bets` — Scommesse e piani B
+- `/injuries` — Infortuni
+- `/updates` — Ultimi aggiornamenti
+- `/settings` — Backup, reset e impostazioni
+
+Con hash router gli URL effettivi saranno ad esempio `/#/wishlist`.
+
+---
+
+# 1. Pagina Asta Live
+
+Questa è la schermata più importante.
+
+## Header KPI sticky
+
+Mostrare sempre:
+
+- `Budget: 500`
+- `Speso`
+- `Residuo`
+- `Slot: X / 25`
+- `Max bid teorico`
+
+Formula:
+
+```ts
+remainingBudget = initialBudget - totalSpent
+remainingSlots = totalRosterSlots - purchasedPlayers.length
+maxTheoreticalBid =
+  remainingSlots > 0
+    ? remainingBudget - (remainingSlots - 1) * minimumBid
+    : 0
+```
+
+Con configurazione attuale:
+
+```txt
+Totale slot = 3 + 8 + 8 + 6 = 25
+Minimum bid = 1
+```
+
+## Budget per ruolo
+
+Mostrare quattro mini-card:
+
+| Ruolo | Target | Range |
+|---|---:|---:|
+| P | 35 | 30–40 |
+| D | 80 | 75–90 |
+| C | 100 | 95–110 |
+| A | 285 | 275–300 |
+
+Per ciascuno mostrare:
+- speso
+- target residuo
+- slot occupati / totali
+
+Il target è solo una guida, non un blocco.
+
+## Ricerca giocatore
+
+Campo ricerca sempre facilmente accessibile.
+
+Deve cercare per:
+- nome
+- squadra
+- ruolo
+
+Filtri rapidi:
+- Tutti
+- P
+- D
+- C
+- A
+- Piano A
+- Piano B/C
+- Scommesse
+- Infortunati
+- Solo disponibili
+
+Ordinamenti:
+- ranking
+- target
+- tetto
+- FVM
+- QA
+- nome
+
+## Card giocatore
+
+Ogni card/riga deve mostrare almeno:
+
+- nome
+- squadra
+- ruolo
+- rank
+- slot
+- piano
+- QA
+- FVM
+- target
+- tetto massimo
+- stato fisico
+- breve consiglio
+
+Badge visuali:
+- `A`
+- `A/B`
+- `B`
+- `C`
+- `Scommessa`
+- `No/Regalo`
+- `OK`
+- `VERDE`
+- `GIALLO`
+- `ROSSO`
+
+### Colori salute
+
+- OK → neutro
+- VERDE → verde
+- GIALLO → giallo/arancio
+- ROSSO → rosso
+
+Non affidarsi solo al colore: mostrare sempre anche il testo.
+
+---
+
+# Azioni giocatore durante l'asta
+
+Cliccando un giocatore deve aprirsi un modal/bottom sheet.
+
+Azioni:
+
+### `COMPRATO DA ME`
+
+Richiede:
+- prezzo pagato
+- slot opzionale
+- nota opzionale
+
+Dopo conferma:
+- il giocatore passa nello stato `mine`
+- il prezzo viene sottratto dal budget
+- viene occupato uno slot del ruolo
+- il dashboard si aggiorna immediatamente
+
+### `PRESO DA ALTRI`
+
+Richiede:
+- prezzo opzionale
+- nota opzionale
+
+Il giocatore viene escluso dai disponibili.
+
+### `DISPONIBILE`
+
+Permette di annullare uno stato precedente.
+
+### `PREFERITO`
+
+Toggle indipendente dallo stato asta.
+
+---
+
+# Controlli intelligenti sul prezzo
+
+Quando inserisco un prezzo per un giocatore mostra:
+
+### Verde
+`prezzo <= target`
+
+Messaggio:
+> Ottimo prezzo rispetto al piano.
+
+### Giallo
+`target < prezzo <= cap`
+
+Messaggio:
+> Sei sopra il target, ma ancora entro il tetto.
+
+### Rosso
+`prezzo > cap`
+
+Messaggio:
+> STOP: stai superando il tetto consigliato.
+
+Il sistema deve permettere comunque di confermare: il tetto è un consiglio, non un blocco.
+
+### Controllo budget
+
+Non permettere un acquisto che renda impossibile completare la rosa al minimo di 1 credito per slot.
+
+Condizione:
+
+```ts
+price <= remainingBudget - (remainingSlots - 1) * minimumBid
+```
+
+Se non soddisfatta, bloccare la conferma e spiegare il motivo.
+
+---
+
+# 2. Wishlist
+
+Mostrare tutti i giocatori del seed.
+
+Funzioni:
+- ricerca
+- filtri
+- sorting
+- stato asta
+- preferiti
+- dettagli giocatore
+- link alle fonti
+
+Su desktop usare tabella.
+Su mobile usare card compatte.
+
+Default sorting:
+1. ruolo
+2. rank
+
+Permettere anche ranking separato per ruolo.
+
+---
+
+# 3. Scommesse
+
+Non creare una seconda copia dei dati.
+
+Usare lo stesso dataset `players` e filtrare:
+
+```ts
+player.isBet === true
+```
+
+Per le scommesse mostrare anche:
+- `betReason`
+- `betRule`
+- target
+- cap
+
+Il cap della scommessa deve essere particolarmente evidente.
+
+---
+
+# 4. Infortuni
+
+Derivare la pagina dalla stessa lista:
+
+```ts
+player.health !== 'OK'
+```
+
+Filtri:
+- VERDE
+- GIALLO
+- ROSSO
+
+Mostrare:
+- problema / situazione
+- rientro stimato
+- consiglio asta
+- target
+- tetto
+- link fonte
+
+Ordinamento default:
+1. ROSSO
+2. GIALLO
+3. VERDE
+
+---
+
+# 5. Ultimi aggiornamenti
+
+Mostrare la lista `updates` inclusa sotto.
+
+Ogni update deve avere:
+- priorità
+- giocatore
+- ruolo
+- cambiamento
+- target aggiornato
+- tetto aggiornato
+- indicazione asta
+- link fonte
+
+Ordinamento:
+1. ALTA
+2. MEDIA
+3. NUOVO
+
+---
+
+# 6. Rosa personale
+
+Può essere un tab nella pagina Asta Live oppure una sezione espandibile.
+
+Mostrare:
+
+```txt
+PORTIERI    0/3
+DIFENSORI   0/8
+CENTROCAMPISTI 0/8
+ATTACCANTI  0/6
+```
+
+Per ogni acquisto:
+- giocatore
+- squadra
+- prezzo
+- slot
+- eventuale nota
+
+Mostrare subtotale ruolo.
+
+Consentire:
+- modifica prezzo
+- modifica nota
+- rimuovi acquisto
+
+---
+
+# Modello dati TypeScript
+
+Usare tipi simili a questi:
+
+```ts
+export type Role = 'P' | 'D' | 'C' | 'A'
+export type HealthStatus = 'OK' | 'VERDE' | 'GIALLO' | 'ROSSO'
+export type AuctionPlayerStatus = 'available' | 'mine' | 'other'
+
+export interface PlayerUpdate {
+  priority: 'ALTA' | 'MEDIA' | 'NUOVO'
+  change: string
+  auctionAdvice: string
+  source: string
+}
+
+export interface Player {
+  id: string
+  rank: number
+  role: Role
+  name: string
+  team: string
+  qa: number
+  fvm: number
+  slot: string
+  plan: string
+  target: number
+  cap: number
+  starter: string | null
+  setPieces: string | null
+  modifierFit: string | null
+  health: HealthStatus
+  returnStatus: string | null
+  advice: string | null
+  quoteSource: string | null
+  healthSource: string | null
+  isBet: boolean
+  betReason?: string
+  betRule?: string
+  lastUpdate?: PlayerUpdate
+}
+
+export interface Purchase {
+  playerId: string
+  price: number
+  slot?: string
+  note?: string
+  purchasedAt: string
+}
+
+export interface OtherPurchase {
+  playerId: string
+  price?: number
+  note?: string
+}
+
+export interface AuctionState {
+  schemaVersion: 1
+  seedVersion: string
+  purchases: Purchase[]
+  otherPurchases: OtherPurchase[]
+  favoritePlayerIds: string[]
+  playerNotes: Record<string, string>
+}
+```
+
+---
+
+# Store Pinia
+
+Creare `src/stores/auction.ts`.
+
+Azioni richieste:
+
+```ts
+buyPlayer(playerId, price, note?)
+markAsOther(playerId, price?, note?)
+setAvailable(playerId)
+toggleFavorite(playerId)
+updatePurchase(playerId, changes)
+resetAuction()
+exportBackup()
+importBackup(json)
+```
+
+Getter:
+
+```ts
+spent
+remainingBudget
+remainingSlots
+maxTheoreticalBid
+purchasesByRole
+spentByRole
+remainingSlotsByRole
+availablePlayers
+myPlayers
+otherPlayers
+```
+
+Persistenza:
+- caricare `localStorage` all'avvio
+- salvare automaticamente dopo ogni variazione
+- usare `JSON.stringify`
+- gestire JSON corrotto senza crash
+
+---
+
+# Schema localStorage
+
+Suggerimento:
+
+```json
+{
+  "schemaVersion": 1,
+  "seedVersion": "2026-09-11",
+  "purchases": [],
+  "otherPurchases": [],
+  "favoritePlayerIds": [],
+  "playerNotes": {}
+}
+```
+
+Chiave:
+
+```txt
+fanta-auction:v1:state
+```
+
+---
+
+# Backup JSON
+
+L'export deve contenere:
+
+```ts
+interface BackupFile {
+  app: 'fantacalcio-auction-assistant'
+  exportedAt: string
+  schemaVersion: number
+  seedVersion: string
+  state: AuctionState
+}
+```
+
+Nome file:
+
+```txt
+fantacalcio-asta-backup-YYYY-MM-DD-HHmm.json
+```
+
+L'import deve:
+- validare almeno i campi principali
+- chiedere conferma prima di sovrascrivere lo stato locale
+- mostrare errore leggibile se il JSON non è valido
+
+---
+
+# Struttura progetto consigliata
+
+```txt
+fantacalcio-auction/
+├─ .github/
+│  └─ workflows/
+│     └─ deploy-pages.yml
+├─ public/
+│  └─ favicon.svg
+├─ src/
+│  ├─ assets/
+│  │  └─ main.css
+│  ├─ components/
+│  │  ├─ AppHeader.vue
+│  │  ├─ BottomNav.vue
+│  │  ├─ BudgetCard.vue
+│  │  ├─ BudgetByRole.vue
+│  │  ├─ PlayerCard.vue
+│  │  ├─ PlayerTable.vue
+│  │  ├─ PlayerFilters.vue
+│  │  ├─ PlayerActionSheet.vue
+│  │  ├─ HealthBadge.vue
+│  │  ├─ PlanBadge.vue
+│  │  ├─ PurchaseList.vue
+│  │  └─ ConfirmDialog.vue
+│  ├─ data/
+│  │  ├─ config.ts
+│  │  ├─ players.ts
+│  │  └─ updates.ts
+│  ├─ router/
+│  │  └─ index.ts
+│  ├─ stores/
+│  │  └─ auction.ts
+│  ├─ types/
+│  │  └─ index.ts
+│  ├─ utils/
+│  │  ├─ auction.ts
+│  │  ├─ backup.ts
+│  │  └─ storage.ts
+│  ├─ views/
+│  │  ├─ AuctionView.vue
+│  │  ├─ WishlistView.vue
+│  │  ├─ BetsView.vue
+│  │  ├─ InjuriesView.vue
+│  │  ├─ UpdatesView.vue
+│  │  └─ SettingsView.vue
+│  ├─ App.vue
+│  └─ main.ts
+├─ index.html
+├─ package.json
+├─ tsconfig.json
+├─ vite.config.ts
+└─ README.md
+```
+
+---
+
+# Design
+
+Stile semplice e leggibile.
+
+Palette suggerita:
+- blu scuro per header
+- verde per buon prezzo / recuperato
+- giallo per attenzione
+- rosso per tetto superato / infortunio lungo
+- sfondo grigio molto chiaro
+
+Requisiti:
+- contrasto accessibile
+- nessun testo importante solo tramite colore
+- niente animazioni pesanti
+- transizioni molto brevi
+- tap target grandi su mobile
+
+## Player card mobile
+
+Esempio:
+
+```txt
+┌──────────────────────────────────────┐
+│ C  PULISIC                  MIL      │
+│ C1 • Piano A/B                       │
+│ QA 23   FVM 140                       │
+│ Target 42        Tetto 55             │
+│ 🟢 OK                                │
+│ Uno dei preferiti qualità/prezzo     │
+│                                      │
+│ [ MIO ] [ ALTRI ] [ ★ ]              │
+└──────────────────────────────────────┘
+```
+
+---
+
+# Performance
+
+Il dataset è piccolo (137 giocatori), quindi:
+- nessuna paginazione obbligatoria
+- filtri client-side
+- computed Vue
+- niente virtual scrolling necessario
+
+La ricerca deve aggiornarsi istantaneamente.
+
+Normalizzare nome e query ignorando maiuscole/minuscole e, possibilmente, accenti.
+
+---
+
+# PWA / offline
+
+**Non è obbligatoria per l'MVP.**
+
+Se l'implementazione rimane semplice, è gradito aggiungere `vite-plugin-pwa` come miglioramento finale in modo che la web app possa essere installata sul telefono e riaperta anche con connessione instabile.
+
+Non sacrificare semplicità e affidabilità per questa feature.
+
+---
+
+# GitHub Pages
+
+Il deploy deve essere incluso nel repository.
+
+Usare GitHub Actions e il deploy ufficiale Pages.
+
+Configurare Vite in modo che funzioni da sottocartella GitHub Pages.
+
+Scelta preferita:
+- `base: './'`
+- router: `createWebHashHistory()`
+
+Workflow indicativo:
+
+```yaml
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+Nel README spiegare:
+1. creare repository GitHub
+2. push del codice su `main`
+3. Settings → Pages
+4. Source → GitHub Actions
+5. attendere il workflow
+6. aprire l'URL Pages
+
+---
+
+# Test minimi richiesti
+
+Usare Vitest solo per la logica critica.
+
+Testare almeno:
+
+1. calcolo budget residuo
+2. calcolo `maxTheoreticalBid`
+3. impossibilità di spendere soldi necessari agli slot rimanenti
+4. conteggio slot per ruolo
+5. serializzazione/deserializzazione localStorage
+6. import backup non valido
+7. aggiornamento prezzo di un acquisto
+
+Non è necessario testare ogni componente UI.
+
+---
+
+# Criteri di accettazione
+
+Il progetto è completo solo se:
+
+- `npm install` funziona
+- `npm run dev` avvia l'app
+- `npm run build` termina senza errori
+- `npm run test` termina senza errori
+- GitHub Pages funziona senza backend
+- refresh della pagina non perde lo stato
+- acquisto giocatore aggiorna budget e slot
+- giocatore preso dagli altri sparisce dai disponibili
+- è possibile annullare un'azione
+- non è possibile spendere più del budget compatibile con gli slot restanti
+- Wishlist contiene tutti i 137 giocatori sotto
+- pagina Scommesse deriva dallo stesso dataset
+- pagina Infortuni deriva dallo stesso dataset
+- export/import backup funziona
+- il layout è realmente utilizzabile da smartphone
+
+---
+
+# Regole strategiche da visualizzare nell'app
+
+Aggiungere una piccola sezione “Promemoria” nella dashboard:
+
+1. **Il tetto è uno STOP, non un obiettivo.**
+2. Con modificatore: quattro difensori forti sono preferibili a un solo supertop più sette tappabuchi.
+3. Se salta un Piano A, passare al Piano B senza rincorrere.
+4. Le scommesse devono avere un cap rigido.
+5. Gialli solo con sconto; rossi solo a prezzo simbolico/regalo.
+6. In attacco preservare sempre budget sufficiente per A2 + A3.
+7. Il budget per ruolo è una guida, non un vincolo.
+
+---
+
+# Seed dati definitivo
+
+**IMPORTANTE:** questi dati sono già pronti e devono essere copiati nel progetto. Non fare scraping e non sostituire i valori con dati inventati.
+
+`seedVersion = 2026-09-11`
+
+## `players`
+
+```json
+[
+  {
+    "id": "p-rom-svilar",
+    "rank": 1,
+    "role": "P",
+    "name": "Svilar",
+    "team": "ROM",
+    "qa": 18,
+    "fvm": 83,
+    "slot": "P1",
+    "plan": "A",
+    "target": 32,
+    "cap": 38,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Prima scelta: sicurezza e modificatore.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-juv-vicario",
+    "rank": 2,
+    "role": "P",
+    "name": "Vicario",
+    "team": "JUV",
+    "qa": 16,
+    "fvm": 69,
+    "slot": "P1",
+    "plan": "A/B",
+    "target": 25,
+    "cap": 31,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ottimo se Svilar sale troppo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-ata-carnesecchi",
+    "rank": 3,
+    "role": "P",
+    "name": "Carnesecchi",
+    "team": "ATA",
+    "qa": 17,
+    "fvm": 57,
+    "slot": "P1",
+    "plan": "A/B",
+    "target": 23,
+    "cap": 28,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rapporto qualità/prezzo molto interessante.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-int-martinez-jo",
+    "rank": 4,
+    "role": "P",
+    "name": "Martinez Jo.",
+    "team": "INT",
+    "qa": 17,
+    "fvm": 68,
+    "slot": "P1/P2",
+    "plan": "B",
+    "target": 22,
+    "cap": 28,
+    "starter": "Variabile",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Valore alto, ma gerarchia da non strapagare.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-com-butez",
+    "rank": 5,
+    "role": "P",
+    "name": "Butez",
+    "team": "COM",
+    "qa": 15,
+    "fvm": 50,
+    "slot": "P1",
+    "plan": "B",
+    "target": 19,
+    "cap": 25,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piano B ideale sotto 25.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-mil-maignan",
+    "rank": 6,
+    "role": "P",
+    "name": "Maignan",
+    "team": "MIL",
+    "qa": 15,
+    "fvm": 52,
+    "slot": "P1",
+    "plan": "B",
+    "target": 18,
+    "cap": 24,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Da prendere se il prezzo resta depresso.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-nap-meret",
+    "rank": 7,
+    "role": "P",
+    "name": "Meret",
+    "team": "NAP",
+    "qa": 11,
+    "fvm": 49,
+    "slot": "P1/P2",
+    "plan": "C / buy-low",
+    "target": 8,
+    "cap": 12,
+    "starter": "Variabile",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "VERDE",
+    "returnStatus": "Lesione di basso grado all'adduttore: rientro fine settembre / inizio ottobre",
+    "advice": "Stop breve ma pesa sulla porta: compralo solo se molto scontato e con copertura.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "NUOVO INFORTUNIO: adduttore",
+      "auctionAdvice": "Solo sconto + copertura",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790"
+    }
+  },
+  {
+    "id": "p-fio-de-gea",
+    "rank": 8,
+    "role": "P",
+    "name": "De Gea",
+    "team": "FIO",
+    "qa": 11,
+    "fvm": 30,
+    "slot": "P1",
+    "plan": "C",
+    "target": 12,
+    "cap": 17,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Soluzione solida se i top scappano.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-bol-skorupski",
+    "rank": 9,
+    "role": "P",
+    "name": "Skorupski",
+    "team": "BOL",
+    "qa": 10,
+    "fvm": 32,
+    "slot": "P1",
+    "plan": "C",
+    "target": 10,
+    "cap": 14,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Affidabile senza sovrapprezzo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-laz-mandas",
+    "rank": 10,
+    "role": "P",
+    "name": "Mandas",
+    "team": "LAZ",
+    "qa": 11,
+    "fvm": 37,
+    "slot": "P1/P2",
+    "plan": "C",
+    "target": 10,
+    "cap": 14,
+    "starter": "Variabile",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Interessante solo se la gerarchia è chiara in asta.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-cag-caprile",
+    "rank": 11,
+    "role": "P",
+    "name": "Caprile",
+    "team": "CAG",
+    "qa": 11,
+    "fvm": 25,
+    "slot": "P1",
+    "plan": "C",
+    "target": 8,
+    "cap": 11,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Neutro",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Low cost titolare.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-udi-okoye",
+    "rank": 12,
+    "role": "P",
+    "name": "Okoye",
+    "team": "UDI",
+    "qa": 9,
+    "fvm": 28,
+    "slot": "P1",
+    "plan": "C",
+    "target": 8,
+    "cap": 10,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Neutro",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Copertura economica.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-tor-perri",
+    "rank": 13,
+    "role": "P",
+    "name": "Perri",
+    "team": "TOR",
+    "qa": 9,
+    "fvm": 26,
+    "slot": "P1",
+    "plan": "C",
+    "target": 7,
+    "cap": 10,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Neutro",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Da tenere come piano C.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "p-lec-falcone",
+    "rank": 14,
+    "role": "P",
+    "name": "Falcone",
+    "team": "LEC",
+    "qa": 8,
+    "fvm": 26,
+    "slot": "P1",
+    "plan": "Scommessa",
+    "target": 6,
+    "cap": 9,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Neutro",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Prezzo basso, utile per risparmiare.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Prezzo basso, utile per risparmiare.",
+    "betRule": "Stop tassativo a 9 crediti."
+  },
+  {
+    "id": "p-par-suzuki",
+    "rank": 15,
+    "role": "P",
+    "name": "Suzuki",
+    "team": "PAR",
+    "qa": 7,
+    "fvm": 20,
+    "slot": "P1",
+    "plan": "Scommessa",
+    "target": 5,
+    "cap": 8,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Neutro",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ultimo piano se vuoi investire tutto fuori dalla porta.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Ultimo piano se vuoi investire tutto fuori dalla porta.",
+    "betRule": "Stop tassativo a 8 crediti."
+  },
+  {
+    "id": "d-int-dimarco",
+    "rank": 1,
+    "role": "D",
+    "name": "Dimarco",
+    "team": "INT",
+    "qa": 31,
+    "fvm": 250,
+    "slot": "D1 bonus",
+    "plan": "A",
+    "target": 60,
+    "cap": 75,
+    "starter": "Alta",
+    "setPieces": "Piazzati #2 Inter",
+    "modifierFit": "Bonus",
+    "health": "OK",
+    "returnStatus": "Recuperato: non risulta tra gli indisponibili attuali",
+    "advice": "Top assoluto, ma col modificatore resta vietato inseguirlo oltre il tetto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-rom-wesley",
+    "rank": 2,
+    "role": "D",
+    "name": "Wesley",
+    "team": "ROM",
+    "qa": 18,
+    "fvm": 95,
+    "slot": "D1",
+    "plan": "A",
+    "target": 28,
+    "cap": 38,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Priorità alta: upside + buon voto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-juv-bremer",
+    "rank": 3,
+    "role": "D",
+    "name": "Bremer",
+    "team": "JUV",
+    "qa": 16,
+    "fvm": 60,
+    "slot": "D1 mod",
+    "plan": "A",
+    "target": 23,
+    "cap": 30,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Profilo perfetto per il modificatore.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-rom-molina-n",
+    "rank": 4,
+    "role": "D",
+    "name": "Molina N.",
+    "team": "ROM",
+    "qa": 18,
+    "fvm": 71,
+    "slot": "D1/D2",
+    "plan": "A/B",
+    "target": 16,
+    "cap": 24,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Più bonus-oriented; valido se non si incendia.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-rom-mancini",
+    "rank": 5,
+    "role": "D",
+    "name": "Mancini",
+    "team": "ROM",
+    "qa": 15,
+    "fvm": 50,
+    "slot": "D1/D2 mod",
+    "plan": "A/B",
+    "target": 17,
+    "cap": 24,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Voto, presenza e pericolosità.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-nap-rrahmani",
+    "rank": 6,
+    "role": "D",
+    "name": "Rrahmani",
+    "team": "NAP",
+    "qa": 14,
+    "fvm": 50,
+    "slot": "D2 mod",
+    "plan": "B",
+    "target": 15,
+    "cap": 22,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ottimo per stabilizzare il modificatore.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-int-bastoni",
+    "rank": 7,
+    "role": "D",
+    "name": "Bastoni",
+    "team": "INT",
+    "qa": 14,
+    "fvm": 42,
+    "slot": "D2 mod",
+    "plan": "B",
+    "target": 15,
+    "cap": 22,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Da voto, ideale nella linea a 4.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-int-akanji",
+    "rank": 8,
+    "role": "D",
+    "name": "Akanji",
+    "team": "INT",
+    "qa": 15,
+    "fvm": 45,
+    "slot": "D2 mod",
+    "plan": "B",
+    "target": 14,
+    "cap": 21,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Qualità e media voto potenziale.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-mil-pavlovic",
+    "rank": 9,
+    "role": "D",
+    "name": "Pavlovic",
+    "team": "MIL",
+    "qa": 14,
+    "fvm": 47,
+    "slot": "D2 mod",
+    "plan": "B",
+    "target": 15,
+    "cap": 21,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Profilo da modificatore più che da bonus.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-juv-kalulu",
+    "rank": 10,
+    "role": "D",
+    "name": "Kalulu",
+    "team": "JUV",
+    "qa": 14,
+    "fvm": 47,
+    "slot": "D2 mod",
+    "plan": "B",
+    "target": 13,
+    "cap": 19,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ottimo rapporto costo/voto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-rom-n-dicka",
+    "rank": 11,
+    "role": "D",
+    "name": "N'Dicka",
+    "team": "ROM",
+    "qa": 12,
+    "fvm": 41,
+    "slot": "D2/D3 mod",
+    "plan": "B",
+    "target": 12,
+    "cap": 18,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Uno dei centrali che voglio per continuità.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-udi-solet",
+    "rank": 12,
+    "role": "D",
+    "name": "Solet",
+    "team": "UDI",
+    "qa": 13,
+    "fvm": 40,
+    "slot": "D2/D3",
+    "plan": "B buy-low",
+    "target": 9,
+    "cap": 14,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Udinese",
+    "modifierFit": "Ottimo",
+    "health": "VERDE",
+    "returnStatus": "Lesione al pettineo: stop ~2 settimane, rientro fine settembre",
+    "advice": "Infortunio breve: prendibile solo con sconto; non oltre 14.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/udinese-infortunio-solet-l-esito-degli-esami-e-i-tempi-di-recupero-497784",
+    "isBet": true,
+    "betReason": "Infortunio breve: prendibile solo con sconto; non oltre 14.",
+    "betRule": "Stop ~2 settimane: prendilo solo se l'infortunio crea sconto. Cap 14.",
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "NUOVO INFORTUNIO: stop ~2 settimane",
+      "auctionAdvice": "Buy-low, non eliminare",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/udinese-infortunio-solet-l-esito-degli-esami-e-i-tempi-di-recupero-497784"
+    }
+  },
+  {
+    "id": "d-nap-di-lorenzo",
+    "rank": 13,
+    "role": "D",
+    "name": "Di Lorenzo",
+    "team": "NAP",
+    "qa": 12,
+    "fvm": 37,
+    "slot": "D2/D3",
+    "plan": "B",
+    "target": 12,
+    "cap": 18,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Esperienza + voto; prezzo gestibile.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-int-bisseck",
+    "rank": 14,
+    "role": "D",
+    "name": "Bisseck",
+    "team": "INT",
+    "qa": 13,
+    "fvm": 36,
+    "slot": "D3",
+    "plan": "B/C",
+    "target": 10,
+    "cap": 16,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piano B con upside.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-int-stones",
+    "rank": 15,
+    "role": "D",
+    "name": "Stones",
+    "team": "INT",
+    "qa": 12,
+    "fvm": 22,
+    "slot": "D3",
+    "plan": "C",
+    "target": 9,
+    "cap": 14,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Prendibile se non si paga il nome.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-gen-ostigard",
+    "rank": 16,
+    "role": "D",
+    "name": "Ostigard",
+    "team": "GEN",
+    "qa": 10,
+    "fvm": 34,
+    "slot": "D3",
+    "plan": "C",
+    "target": 10,
+    "cap": 15,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Genoa",
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Centrale da voto + piazzati offensivi.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-int-spence",
+    "rank": 17,
+    "role": "D",
+    "name": "Spence",
+    "team": "INT",
+    "qa": 11,
+    "fvm": 32,
+    "slot": "D3",
+    "plan": "C",
+    "target": 9,
+    "cap": 14,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Alternativa se salti gli esterni top.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-ata-scalvini",
+    "rank": 18,
+    "role": "D",
+    "name": "Scalvini",
+    "team": "ATA",
+    "qa": 11,
+    "fvm": 26,
+    "slot": "D3",
+    "plan": "C",
+    "target": 8,
+    "cap": 12,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Da prendere al prezzo giusto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-com-ramon",
+    "rank": 19,
+    "role": "D",
+    "name": "Ramon",
+    "team": "COM",
+    "qa": 10,
+    "fvm": 31,
+    "slot": "D3",
+    "plan": "C",
+    "target": 8,
+    "cap": 12,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Titolare utile e non glamour.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-mil-gila",
+    "rank": 20,
+    "role": "D",
+    "name": "Gila",
+    "team": "MIL",
+    "qa": 13,
+    "fvm": 31,
+    "slot": "D2/D3",
+    "plan": "C",
+    "target": 8,
+    "cap": 11,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": "Fastidio al rotuleo rientrato; ha ripreso col gruppo",
+    "advice": "Torna acquistabile come D2/D3 da modificatore.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/08_09_2026/milan-le-condizioni-di-mario-gila-in-vista-della-lazio-497676",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "RECUPERATO",
+      "auctionAdvice": "Torna acquistabile",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/08_09_2026/milan-le-condizioni-di-mario-gila-in-vista-della-lazio-497676"
+    }
+  },
+  {
+    "id": "d-juv-cambiaso",
+    "rank": 21,
+    "role": "D",
+    "name": "Cambiaso",
+    "team": "JUV",
+    "qa": 8,
+    "fvm": 18,
+    "slot": "D3",
+    "plan": "C",
+    "target": 5,
+    "cap": 9,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "GIALLO",
+    "returnStatus": "Distorsione alla caviglia: out col Sassuolo, rientro atteso dopo la sosta / seconda metà settembre",
+    "advice": "Assenza breve ma certa: solo a sconto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "Out prossimo turno, rientro dopo sosta",
+      "auctionAdvice": "Solo a sconto",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770"
+    }
+  },
+  {
+    "id": "d-ata-hien",
+    "rank": 22,
+    "role": "D",
+    "name": "Hien",
+    "team": "ATA",
+    "qa": 7,
+    "fvm": 11,
+    "slot": "D4",
+    "plan": "C",
+    "target": 5,
+    "cap": 7,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "GIALLO",
+    "returnStatus": "Rientro stimato inizio ottobre",
+    "advice": "Buon modificatore, ma lo voglio scontato.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-com-couto",
+    "rank": 23,
+    "role": "D",
+    "name": "Couto",
+    "team": "COM",
+    "qa": 9,
+    "fvm": 32,
+    "slot": "D3/D4",
+    "plan": "Scommessa",
+    "target": 7,
+    "cap": 11,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Bonus",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Upside offensivo a costo contenuto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Upside offensivo a costo contenuto.",
+    "betRule": "Stop tassativo a 11 crediti."
+  },
+  {
+    "id": "d-bol-theate",
+    "rank": 24,
+    "role": "D",
+    "name": "Theate",
+    "team": "BOL",
+    "qa": 8,
+    "fvm": 20,
+    "slot": "D3/D4",
+    "plan": "Scommessa",
+    "target": 7,
+    "cap": 11,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Nome poco sexy, utile per il modificatore.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Nome poco sexy, utile per il modificatore.",
+    "betRule": "Stop tassativo a 11 crediti."
+  },
+  {
+    "id": "d-mil-bartesaghi",
+    "rank": 25,
+    "role": "D",
+    "name": "Bartesaghi",
+    "team": "MIL",
+    "qa": 8,
+    "fvm": 22,
+    "slot": "D3/D4",
+    "plan": "Scommessa",
+    "target": 7,
+    "cap": 11,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Scommessa su minutaggio e crescita.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Scommessa su minutaggio e crescita.",
+    "betRule": "Stop tassativo a 11 crediti."
+  },
+  {
+    "id": "d-lec-tiago-gabriel",
+    "rank": 26,
+    "role": "D",
+    "name": "Tiago Gabriel",
+    "team": "LEC",
+    "qa": 8,
+    "fvm": 20,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 6,
+    "cap": 10,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Profilo da voto per chiudere il reparto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Profilo da voto per chiudere il reparto.",
+    "betRule": "Stop tassativo a 10 crediti."
+  },
+  {
+    "id": "d-par-delprato",
+    "rank": 27,
+    "role": "D",
+    "name": "Delprato",
+    "team": "PAR",
+    "qa": 8,
+    "fvm": 21,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 6,
+    "cap": 10,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Titolare affidabile low cost.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Titolare affidabile low cost.",
+    "betRule": "Stop tassativo a 10 crediti."
+  },
+  {
+    "id": "d-par-valeri",
+    "rank": 28,
+    "role": "D",
+    "name": "Valeri",
+    "team": "PAR",
+    "qa": 8,
+    "fvm": 22,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 6,
+    "cap": 10,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Parma",
+    "modifierFit": "Bonus",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Interessante per bonus/piazzati.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Interessante per bonus/piazzati.",
+    "betRule": "Stop tassativo a 10 crediti."
+  },
+  {
+    "id": "d-gen-vasquez",
+    "rank": 29,
+    "role": "D",
+    "name": "Vasquez",
+    "team": "GEN",
+    "qa": 9,
+    "fvm": 30,
+    "slot": "D3/D4",
+    "plan": "C",
+    "target": 7,
+    "cap": 10,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Voto e pericolosità sui piazzati.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-udi-vojvoda",
+    "rank": 30,
+    "role": "D",
+    "name": "Vojvoda",
+    "team": "UDI",
+    "qa": 9,
+    "fvm": 19,
+    "slot": "D4",
+    "plan": "C",
+    "target": 7,
+    "cap": 10,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Titolare economico.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-ata-zappacosta",
+    "rank": 31,
+    "role": "D",
+    "name": "Zappacosta",
+    "team": "ATA",
+    "qa": 8,
+    "fvm": 19,
+    "slot": "D4",
+    "plan": "C",
+    "target": 6,
+    "cap": 9,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Bonus",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Solo se resta davvero economico.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-bol-miranda-j",
+    "rank": 32,
+    "role": "D",
+    "name": "Miranda J.",
+    "team": "BOL",
+    "qa": 8,
+    "fvm": 23,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 6,
+    "cap": 9,
+    "starter": "Alta",
+    "setPieces": "Piazzati #3 Bologna",
+    "modifierFit": "Bonus",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Buon ultimo/penultimo slot.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-nap-badiashile",
+    "rank": 33,
+    "role": "D",
+    "name": "Badiashile",
+    "team": "NAP",
+    "qa": 7,
+    "fvm": 18,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 5,
+    "cap": 8,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Scommessa strutturale, cap basso.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-ata-bernasconi",
+    "rank": 34,
+    "role": "D",
+    "name": "Bernasconi",
+    "team": "ATA",
+    "qa": 6,
+    "fvm": 18,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 7,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ultimo slot con upside.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-mil-de-winter",
+    "rank": 35,
+    "role": "D",
+    "name": "De Winter",
+    "team": "MIL",
+    "qa": 5,
+    "fvm": 20,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 7,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Ottimo",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Da monitorare nelle rotazioni.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Da monitorare nelle rotazioni.",
+    "betRule": "Stop tassativo a 7 crediti."
+  },
+  {
+    "id": "d-cag-sugawara",
+    "rank": 36,
+    "role": "D",
+    "name": "Sugawara",
+    "team": "CAG",
+    "qa": 6,
+    "fvm": 15,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 7,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "Bonus",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Profilo offensivo da ultimo slot.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-com-valle",
+    "rank": 37,
+    "role": "D",
+    "name": "Valle",
+    "team": "COM",
+    "qa": 6,
+    "fvm": 21,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 7,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Buono",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Interessante se scivola a 1-5.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "d-tor-belghali",
+    "rank": 38,
+    "role": "D",
+    "name": "Belghali",
+    "team": "TOR",
+    "qa": 8,
+    "fvm": 18,
+    "slot": "D4",
+    "plan": "Scommessa",
+    "target": 5,
+    "cap": 9,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Bonus",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Esterno offensivo: upside, ma non è il profilo ideale da modificatore. Cap 9.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": true,
+    "betReason": "Esterno offensivo: upside, ma non è il profilo ideale da modificatore. Cap 9.",
+    "betRule": "Profilo offensivo, ma meno adatto al modificatore: cap 9.",
+    "lastUpdate": {
+      "priority": "NUOVO",
+      "change": "Aggiunto alla wishlist",
+      "auctionAdvice": "Esterno offensivo, meno da modificatore",
+      "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+    }
+  },
+  {
+    "id": "d-udi-kamara-h",
+    "rank": 39,
+    "role": "D",
+    "name": "Kamara H.",
+    "team": "UDI",
+    "qa": 10,
+    "fvm": 12,
+    "slot": "D3/D4",
+    "plan": "Scommessa",
+    "target": 5,
+    "cap": 8,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": "Neutro",
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "2 gol nelle prime 3: interessante, ma discontinuità e hype. Cap 8.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": true,
+    "betReason": "2 gol nelle prime 3: interessante, ma discontinuità e hype. Cap 8.",
+    "betRule": "2 gol nelle prime 3, ma discontinuità: cap 8.",
+    "lastUpdate": {
+      "priority": "NUOVO",
+      "change": "Aggiunto alla wishlist",
+      "auctionAdvice": "2 gol ma cap rigido",
+      "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+    }
+  },
+  {
+    "id": "d-nap-buongiorno",
+    "rank": 40,
+    "role": "D",
+    "name": "Buongiorno",
+    "team": "NAP",
+    "qa": 6,
+    "fvm": 15,
+    "slot": "D3",
+    "plan": "No/Regalo",
+    "target": 3,
+    "cap": 5,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": "TOP",
+    "health": "ROSSO",
+    "returnStatus": "Menisco operato; rientro stimato metà novembre",
+    "advice": "Per i tuoi criteri è da evitare salvo prezzo simbolico.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-com-paz-n",
+    "rank": 1,
+    "role": "C",
+    "name": "Paz N.",
+    "team": "COM",
+    "qa": 30,
+    "fvm": 250,
+    "slot": "C1 top",
+    "plan": "A",
+    "target": 65,
+    "cap": 80,
+    "starter": "Alta",
+    "setPieces": "Piazzati #1 Como",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Top assoluto, ma serve disciplina sul prezzo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-int-calhanoglu",
+    "rank": 2,
+    "role": "C",
+    "name": "Calhanoglu",
+    "team": "INT",
+    "qa": 28,
+    "fvm": 242,
+    "slot": "C1 top",
+    "plan": "A",
+    "target": 65,
+    "cap": 80,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 + piazzati #1 Inter",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Bonus e rigori: top, non oltre il tetto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-mil-pulisic",
+    "rank": 3,
+    "role": "C",
+    "name": "Pulisic",
+    "team": "MIL",
+    "qa": 23,
+    "fvm": 140,
+    "slot": "C1",
+    "plan": "A/B",
+    "target": 42,
+    "cap": 55,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 + piazzati #2 Milan",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Resta un C1/C2 di alto livello, ma FVM sceso a 140: non oltre 55.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-nap-mctominay",
+    "rank": 4,
+    "role": "C",
+    "name": "McTominay",
+    "team": "NAP",
+    "qa": 26,
+    "fvm": 190,
+    "slot": "C1",
+    "plan": "A/B sconto",
+    "target": 32,
+    "cap": 45,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "GIALLO",
+    "returnStatus": "Ablazione riuscita; rientro stimato da metà ottobre",
+    "advice": "Top di ruolo, ma il mese perso va scontato: tetto 45.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-mil-rabiot",
+    "rank": 5,
+    "role": "C",
+    "name": "Rabiot",
+    "team": "MIL",
+    "qa": 22,
+    "fvm": 142,
+    "slot": "C1/C2",
+    "plan": "A/B",
+    "target": 38,
+    "cap": 48,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Solido con bonus, ottimo semitop.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-bol-orsolini",
+    "rank": 6,
+    "role": "C",
+    "name": "Orsolini",
+    "team": "BOL",
+    "qa": 25,
+    "fvm": 152,
+    "slot": "C1/C2",
+    "plan": "A/B sconto",
+    "target": 35,
+    "cap": 45,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 + piazzati #1 Bologna",
+    "modifierFit": null,
+    "health": "VERDE",
+    "returnStatus": "Rientro stimato fine settembre",
+    "advice": "Stop breve e FVM sceso: buy-low interessante sotto 40-45.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-nap-de-bruyne",
+    "rank": 7,
+    "role": "C",
+    "name": "De Bruyne",
+    "team": "NAP",
+    "qa": 17,
+    "fvm": 103,
+    "slot": "C1/C2",
+    "plan": "B",
+    "target": 28,
+    "cap": 38,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 + piazzati #1 Napoli",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Tiratore principale: valore superiore alla QA.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-com-baturina",
+    "rank": 8,
+    "role": "C",
+    "name": "Baturina",
+    "team": "COM",
+    "qa": 21,
+    "fvm": 155,
+    "slot": "C2",
+    "plan": "B",
+    "target": 30,
+    "cap": 40,
+    "starter": "Alta",
+    "setPieces": "Piazzati #2 Como",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "FVM salito molto (155): è ormai un C2 forte, non più una scommessa economica.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "FVM salito a 155",
+      "auctionAdvice": "Ora è un C2 vero",
+      "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+    }
+  },
+  {
+    "id": "c-rom-mora",
+    "rank": 9,
+    "role": "C",
+    "name": "Mora",
+    "team": "ROM",
+    "qa": 20,
+    "fvm": 100,
+    "slot": "C2",
+    "plan": "B",
+    "target": 26,
+    "cap": 35,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Upside importante, prezzo da controllare.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-com-da-cunha",
+    "rank": 10,
+    "role": "C",
+    "name": "Da Cunha",
+    "team": "COM",
+    "qa": 18,
+    "fvm": 85,
+    "slot": "C2",
+    "plan": "B",
+    "target": 25,
+    "cap": 34,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Como",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista: profilo molto utile.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-laz-zaccagni",
+    "rank": 11,
+    "role": "C",
+    "name": "Zaccagni",
+    "team": "LAZ",
+    "qa": 16,
+    "fvm": 92,
+    "slot": "C2",
+    "plan": "B",
+    "target": 26,
+    "cap": 35,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 + piazzati #2 Lazio",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Bonus e rigori senza costo da supertop.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-tor-vlasic",
+    "rank": 12,
+    "role": "C",
+    "name": "Vlasic",
+    "team": "TOR",
+    "qa": 13,
+    "fvm": 65,
+    "slot": "C2",
+    "plan": "B",
+    "target": 24,
+    "cap": 32,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Torino",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista da prendere se resta sotto hype.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-int-barella",
+    "rank": 13,
+    "role": "C",
+    "name": "Barella",
+    "team": "INT",
+    "qa": 17,
+    "fvm": 81,
+    "slot": "C2",
+    "plan": "B",
+    "target": 22,
+    "cap": 30,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Affidabilità e continuità.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-fio-atta",
+    "rank": 14,
+    "role": "C",
+    "name": "Atta",
+    "team": "FIO",
+    "qa": 15,
+    "fvm": 72,
+    "slot": "C2/C3",
+    "plan": "B",
+    "target": 22,
+    "cap": 30,
+    "starter": "Alta",
+    "setPieces": "Piazzati #2 Fiorentina",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": "Recuperato e convocato contro il Venezia",
+    "advice": "Disponibile: resta un buon C2/C3 con upside.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/fiorentina-i-convocati-per-venezia-ok-atta-e-oulai-497780",
+    "isBet": false
+  },
+  {
+    "id": "c-udi-zaniolo",
+    "rank": 15,
+    "role": "C",
+    "name": "Zaniolo",
+    "team": "UDI",
+    "qa": 17,
+    "fvm": 75,
+    "slot": "C2/C3",
+    "plan": "B sconto",
+    "target": 13,
+    "cap": 20,
+    "starter": "Alta",
+    "setPieces": "Rigori #3 + piazzati #1 Udinese",
+    "modifierFit": null,
+    "health": "VERDE",
+    "returnStatus": "Rientro stimato fine settembre",
+    "advice": "Comprabile con sconto: non oltre 20.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-laz-frattesi",
+    "rank": 16,
+    "role": "C",
+    "name": "Frattesi",
+    "team": "LAZ",
+    "qa": 11,
+    "fvm": 120,
+    "slot": "C2",
+    "plan": "B / hype",
+    "target": 22,
+    "cap": 30,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "3 gol in 3: valore reale salito, ma il rischio è strapagarlo. Stop a 30.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "FVM 120, 3 gol in 3",
+      "auctionAdvice": "Non farti trascinare dall'hype",
+      "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+    }
+  },
+  {
+    "id": "c-ata-samardzic",
+    "rank": 17,
+    "role": "C",
+    "name": "Samardzic",
+    "team": "ATA",
+    "qa": 13,
+    "fvm": 44,
+    "slot": "C3",
+    "plan": "C",
+    "target": 16,
+    "cap": 23,
+    "starter": "Medio-alta",
+    "setPieces": "Rigori #3 + piazzati #2 Atalanta",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Buon piano B per bonus.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-udi-ekkelenkamp",
+    "rank": 18,
+    "role": "C",
+    "name": "Ekkelenkamp",
+    "team": "UDI",
+    "qa": 12,
+    "fvm": 57,
+    "slot": "C3",
+    "plan": "C",
+    "target": 16,
+    "cap": 23,
+    "starter": "Alta",
+    "setPieces": "Piazzati #2 Udinese",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Profilo sottovalutato.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-fio-goncalves-p",
+    "rank": 19,
+    "role": "C",
+    "name": "Goncalves P.",
+    "team": "FIO",
+    "qa": 12,
+    "fvm": 47,
+    "slot": "C3",
+    "plan": "B/C",
+    "target": 12,
+    "cap": 20,
+    "starter": "Medio-alta",
+    "setPieces": "Da verificare",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Qualità e posizione offensiva: piano B/C con upside. Non oltre 20.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": true,
+    "betReason": "Qualità e posizione offensiva: piano B/C con upside. Non oltre 20.",
+    "betRule": "Qualità alta ma gerarchie ancora da consolidare: cap 20.",
+    "lastUpdate": {
+      "priority": "NUOVO",
+      "change": "Aggiunto alla wishlist",
+      "auctionAdvice": "C3 con upside",
+      "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+    }
+  },
+  {
+    "id": "c-mil-moreira",
+    "rank": 20,
+    "role": "C",
+    "name": "Moreira",
+    "team": "MIL",
+    "qa": 11,
+    "fvm": 37,
+    "slot": "C3",
+    "plan": "Scommessa",
+    "target": 15,
+    "cap": 22,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Upside da scommessa, ma cap rigoroso.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Upside da scommessa, ma cap rigoroso.",
+    "betRule": "Upside sì, minutaggio da gestire: cap rigoroso."
+  },
+  {
+    "id": "c-fio-mastantuono",
+    "rank": 21,
+    "role": "C",
+    "name": "Mastantuono",
+    "team": "FIO",
+    "qa": 11,
+    "fvm": 39,
+    "slot": "C3",
+    "plan": "Scommessa",
+    "target": 16,
+    "cap": 23,
+    "starter": "Medio-alta",
+    "setPieces": "Piazzati #1 Fiorentina",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piazzati + talento: bella scommessa.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Piazzati + talento: bella scommessa.",
+    "betRule": "Talento sì, non trasformarlo in un C2 costoso."
+  },
+  {
+    "id": "c-juv-alajbegovic",
+    "rank": 22,
+    "role": "C",
+    "name": "Alajbegovic",
+    "team": "JUV",
+    "qa": 11,
+    "fvm": 42,
+    "slot": "C3/C4",
+    "plan": "Scommessa",
+    "target": 14,
+    "cap": 21,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Giovane con upside, senza inseguire l'hype.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Giovane con upside, senza inseguire l'hype.",
+    "betRule": "Stop tassativo a 21 crediti."
+  },
+  {
+    "id": "c-juv-mckennie",
+    "rank": 23,
+    "role": "C",
+    "name": "McKennie",
+    "team": "JUV",
+    "qa": 16,
+    "fvm": 70,
+    "slot": "C2/C3",
+    "plan": "C sconto",
+    "target": 11,
+    "cap": 17,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "VERDE",
+    "returnStatus": "Condizioni in netto miglioramento; possibile convocazione, prudenza",
+    "advice": "Problema breve: acquistabile, ma non pagarlo come pienamente a regime.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "Condizioni migliorate; possibile convocazione",
+      "auctionAdvice": "Prudenza, ma rischio breve",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770"
+    }
+  },
+  {
+    "id": "c-par-bernabe",
+    "rank": 24,
+    "role": "C",
+    "name": "Bernabè",
+    "team": "PAR",
+    "qa": 7,
+    "fvm": 31,
+    "slot": "C3",
+    "plan": "C sconto",
+    "target": 8,
+    "cap": 12,
+    "starter": "Alta",
+    "setPieces": "Rigori #3 + piazzati #1 Parma",
+    "modifierFit": null,
+    "health": "GIALLO",
+    "returnStatus": "Problema fisico ancora da verificare per Como-Parma",
+    "advice": "Piazzati utili, ma non superare 12 finché non arriva il via libera.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-bol-bernardeschi",
+    "rank": 25,
+    "role": "C",
+    "name": "Bernardeschi",
+    "team": "BOL",
+    "qa": 10,
+    "fvm": 27,
+    "slot": "C3/C4",
+    "plan": "C",
+    "target": 10,
+    "cap": 15,
+    "starter": "Medio-alta",
+    "setPieces": "Rigori #2 + piazzati #2 Bologna",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Specialista da rotazione.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-int-zielinski",
+    "rank": 26,
+    "role": "C",
+    "name": "Zielinski",
+    "team": "INT",
+    "qa": 12,
+    "fvm": 42,
+    "slot": "C3/C4",
+    "plan": "C",
+    "target": 10,
+    "cap": 16,
+    "starter": "Medio-alta",
+    "setPieces": "Rigori #2 + piazzati #3 Inter",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Può portare bonus a costo controllato.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-mil-modric",
+    "rank": 27,
+    "role": "C",
+    "name": "Modric",
+    "team": "MIL",
+    "qa": 12,
+    "fvm": 45,
+    "slot": "C3/C4",
+    "plan": "C",
+    "target": 10,
+    "cap": 16,
+    "starter": "Alta",
+    "setPieces": "Piazzati #1 Milan",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piazzati e voto; meno gol.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-nap-politano",
+    "rank": 28,
+    "role": "C",
+    "name": "Politano",
+    "team": "NAP",
+    "qa": 9,
+    "fvm": 37,
+    "slot": "C3/C4",
+    "plan": "C",
+    "target": 9,
+    "cap": 15,
+    "starter": "Medio-alta",
+    "setPieces": "Rigori #3 + piazzati #2 Napoli",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piano C con bonus.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-fro-calo",
+    "rank": 29,
+    "role": "C",
+    "name": "Calò",
+    "team": "FRO",
+    "qa": 8,
+    "fvm": 27,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 9,
+    "cap": 14,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 + piazzati #1 Frosinone",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista low cost: scommessa perfetta.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Rigorista low cost: scommessa perfetta.",
+    "betRule": "Stop tassativo a 14 crediti."
+  },
+  {
+    "id": "c-fro-schmid",
+    "rank": 30,
+    "role": "C",
+    "name": "Schmid",
+    "team": "FRO",
+    "qa": 8,
+    "fvm": 25,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 8,
+    "cap": 13,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 + piazzati #2 Frosinone",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Alternativa a Calò.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Alternativa a Calò.",
+    "betRule": "Stop tassativo a 13 crediti."
+  },
+  {
+    "id": "c-com-milla",
+    "rank": 31,
+    "role": "C",
+    "name": "Milla",
+    "team": "COM",
+    "qa": 6,
+    "fvm": 30,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 6,
+    "cap": 10,
+    "starter": "Medio-alta",
+    "setPieces": "Piazzati #3 Como",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Low cost con potenziale assist.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Low cost con potenziale assist.",
+    "betRule": "Stop tassativo a 10 crediti."
+  },
+  {
+    "id": "c-cag-fazzini",
+    "rank": 32,
+    "role": "C",
+    "name": "Fazzini",
+    "team": "CAG",
+    "qa": 6,
+    "fvm": 23,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 5,
+    "cap": 9,
+    "starter": "Medio-alta",
+    "setPieces": "Piazzati #1 Cagliari",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piazzati da ultimo slot.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Piazzati da ultimo slot.",
+    "betRule": "Stop tassativo a 9 crediti."
+  },
+  {
+    "id": "c-cag-romano",
+    "rank": 33,
+    "role": "C",
+    "name": "Romano",
+    "team": "CAG",
+    "qa": 7,
+    "fvm": 21,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 8,
+    "starter": "Medio-alta",
+    "setPieces": "Piazzati #3 Cagliari",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ultimo slot interessante.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Ultimo slot interessante.",
+    "betRule": "Stop tassativo a 8 crediti."
+  },
+  {
+    "id": "c-mil-cisse-a",
+    "rank": 34,
+    "role": "C",
+    "name": "Cissé A.",
+    "team": "MIL",
+    "qa": 7,
+    "fvm": 40,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 6,
+    "cap": 10,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "FVM salito a 40 dopo l'avvio: scommessa sì, ma non oltre 10.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": true,
+    "betReason": "FVM salito a 40 dopo l'avvio: scommessa sì, ma non oltre 10.",
+    "betRule": "FVM già salito a 40: hype alto. Cap 10.",
+    "lastUpdate": {
+      "priority": "MEDIA",
+      "change": "FVM salito a 40",
+      "auctionAdvice": "Scommessa, ma non più nascosta",
+      "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+    }
+  },
+  {
+    "id": "c-sas-volpato",
+    "rank": 35,
+    "role": "C",
+    "name": "Volpato",
+    "team": "SAS",
+    "qa": 9,
+    "fvm": 25,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 3,
+    "cap": 6,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "GIALLO",
+    "returnStatus": "Lesione moderata al flessore: rientro indicativo inizio ottobre",
+    "advice": "Scommessa solo a prezzo minimo finché è fermo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-lec-monteiro-j",
+    "rank": 36,
+    "role": "C",
+    "name": "Monteiro J.",
+    "team": "LEC",
+    "qa": 7,
+    "fvm": 23,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 5,
+    "cap": 8,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Titolare economico.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Titolare economico.",
+    "betRule": "Stop tassativo a 8 crediti."
+  },
+  {
+    "id": "c-tor-fitz-jim",
+    "rank": 37,
+    "role": "C",
+    "name": "Fitz-Jim",
+    "team": "TOR",
+    "qa": 5,
+    "fvm": 18,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 7,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Profondità a prezzo minimo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-fio-oulai",
+    "rank": 38,
+    "role": "C",
+    "name": "Oulai",
+    "team": "FIO",
+    "qa": 6,
+    "fvm": 18,
+    "slot": "C4",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 7,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": "Recuperato e convocato contro il Venezia",
+    "advice": "Di nuovo acquistabile come ultimo slot; cap basso.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/fiorentina-i-convocati-per-venezia-ok-atta-e-oulai-497780",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "RECUPERATO e convocato",
+      "auctionAdvice": "Scommessa low cost",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/fiorentina-i-convocati-per-venezia-ok-atta-e-oulai-497780"
+    }
+  },
+  {
+    "id": "c-juv-thuram-k",
+    "rank": 39,
+    "role": "C",
+    "name": "Thuram K.",
+    "team": "JUV",
+    "qa": 9,
+    "fvm": 25,
+    "slot": "C2",
+    "plan": "No/Regalo",
+    "target": 2,
+    "cap": 4,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "ROSSO",
+    "returnStatus": "Operato; rientro stimato gennaio",
+    "advice": "Stop troppo lungo per i tuoi criteri.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-mon-pessina",
+    "rank": 40,
+    "role": "C",
+    "name": "Pessina",
+    "team": "MON",
+    "qa": 6,
+    "fvm": 15,
+    "slot": "C3",
+    "plan": "No/Regalo",
+    "target": 2,
+    "cap": 4,
+    "starter": "Alta",
+    "setPieces": "Piazzati #3 Monza",
+    "modifierFit": null,
+    "health": "ROSSO",
+    "returnStatus": "Rientro stimato inizio novembre",
+    "advice": "Quasi due mesi: solo prezzo simbolico.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-par-nicolussi-caviglia",
+    "rank": 41,
+    "role": "C",
+    "name": "Nicolussi Caviglia",
+    "team": "PAR",
+    "qa": 6,
+    "fvm": 16,
+    "slot": "C3",
+    "plan": "No/Regalo",
+    "target": 2,
+    "cap": 4,
+    "starter": "Alta",
+    "setPieces": "Piazzati #2 Parma",
+    "modifierFit": null,
+    "health": "ROSSO",
+    "returnStatus": "Operato; rientro stimato novembre",
+    "advice": "Da evitare salvo regalo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "c-sas-kone-i",
+    "rank": 42,
+    "role": "C",
+    "name": "Konè I.",
+    "team": "SAS",
+    "qa": 8,
+    "fvm": 20,
+    "slot": "C3",
+    "plan": "No/Regalo",
+    "target": 1,
+    "cap": 3,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "ROSSO",
+    "returnStatus": "Tibia/perone; rientro stimato dicembre",
+    "advice": "Da evitare.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-rom-malen",
+    "rank": 1,
+    "role": "A",
+    "name": "Malen",
+    "team": "ROM",
+    "qa": 37,
+    "fvm": 445,
+    "slot": "A1 top",
+    "plan": "A",
+    "target": 190,
+    "cap": 215,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 + piazzati #2 Roma",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Top, ma a 230-250 lascialo agli altri.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-int-martinez-l",
+    "rank": 2,
+    "role": "A",
+    "name": "Martinez L.",
+    "team": "INT",
+    "qa": 35,
+    "fvm": 390,
+    "slot": "A1 top",
+    "plan": "A",
+    "target": 165,
+    "cap": 185,
+    "starter": "Alta",
+    "setPieces": "Rigori #3 Inter",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "FVM salito a 390: resta il mio A1 preferito se non supera 185.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-nap-hojlund",
+    "rank": 3,
+    "role": "A",
+    "name": "Hojlund",
+    "team": "NAP",
+    "qa": 29,
+    "fvm": 285,
+    "slot": "A1/A2",
+    "plan": "A/B",
+    "target": 115,
+    "cap": 135,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Napoli",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "FVM salito a 285: A1/A2 forte, cap leggermente alzato ma senza inseguire.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-int-thuram",
+    "rank": 4,
+    "role": "A",
+    "name": "Thuram",
+    "team": "INT",
+    "qa": 28,
+    "fvm": 260,
+    "slot": "A1/A2",
+    "plan": "A/B",
+    "target": 105,
+    "cap": 125,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piano A/B molto solido.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-mil-ramos-g",
+    "rank": 5,
+    "role": "A",
+    "name": "Ramos G.",
+    "team": "MIL",
+    "qa": 27,
+    "fvm": 232,
+    "slot": "A1/A2",
+    "plan": "A/B",
+    "target": 100,
+    "cap": 115,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Milan",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista: ottimo se si ferma vicino a 100.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-com-kean",
+    "rank": 6,
+    "role": "A",
+    "name": "Kean",
+    "team": "COM",
+    "qa": 25,
+    "fvm": 185,
+    "slot": "A2",
+    "plan": "B",
+    "target": 85,
+    "cap": 105,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Como",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Secondo slot forte.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-juv-woltemade",
+    "rank": 7,
+    "role": "A",
+    "name": "Woltemade",
+    "team": "JUV",
+    "qa": 23,
+    "fvm": 140,
+    "slot": "A2",
+    "plan": "B",
+    "target": 75,
+    "cap": 95,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Juventus",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Alternativa se i primi 5 esplodono.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-com-douvikas",
+    "rank": 8,
+    "role": "A",
+    "name": "Douvikas",
+    "team": "COM",
+    "qa": 21,
+    "fvm": 180,
+    "slot": "A2/A3",
+    "plan": "B",
+    "target": 70,
+    "cap": 85,
+    "starter": "Alta",
+    "setPieces": "Rigori #3 Como",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Profilo da gol, ottimo piano B.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-juv-kolo-muani",
+    "rank": 9,
+    "role": "A",
+    "name": "Kolo Muani",
+    "team": "JUV",
+    "qa": 24,
+    "fvm": 143,
+    "slot": "A2/A3",
+    "plan": "B buy-low",
+    "target": 50,
+    "cap": 65,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Juventus",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "FVM sceso a 143: resta un buy-low, ma non oltre 65.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-ata-scamacca",
+    "rank": 10,
+    "role": "A",
+    "name": "Scamacca",
+    "team": "ATA",
+    "qa": 19,
+    "fvm": 100,
+    "slot": "A3",
+    "plan": "B",
+    "target": 48,
+    "cap": 60,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Atalanta",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista e centravanti: A3 che può valere A2.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-sas-berardi",
+    "rank": 11,
+    "role": "A",
+    "name": "Berardi",
+    "team": "SAS",
+    "qa": 19,
+    "fvm": 108,
+    "slot": "A3",
+    "plan": "B",
+    "target": 48,
+    "cap": 58,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 + piazzati #1 Sassuolo",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Bonus multipli, prezzo da tenere sotto controllo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-ata-krstovic",
+    "rank": 12,
+    "role": "A",
+    "name": "Krstovic",
+    "team": "ATA",
+    "qa": 18,
+    "fvm": 96,
+    "slot": "A3",
+    "plan": "B",
+    "target": 40,
+    "cap": 52,
+    "starter": "Medio-alta",
+    "setPieces": "Rigori #2 Atalanta",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Buona alternativa a Scamacca.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-ata-de-ketelaere",
+    "rank": 13,
+    "role": "A",
+    "name": "De Ketelaere",
+    "team": "ATA",
+    "qa": 17,
+    "fvm": 92,
+    "slot": "A3",
+    "plan": "B",
+    "target": 40,
+    "cap": 50,
+    "starter": "Alta",
+    "setPieces": "Piazzati #1 Atalanta",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Tanti modi di portare bonus.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-int-esposito-f-p",
+    "rank": 14,
+    "role": "A",
+    "name": "Esposito F.P.",
+    "team": "INT",
+    "qa": 17,
+    "fvm": 105,
+    "slot": "A3",
+    "plan": "B",
+    "target": 38,
+    "cap": 50,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Upside alto, attenzione al minutaggio.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-mil-leao",
+    "rank": 15,
+    "role": "A",
+    "name": "Leao",
+    "team": "MIL",
+    "qa": 18,
+    "fvm": 75,
+    "slot": "A3",
+    "plan": "B/C",
+    "target": 35,
+    "cap": 48,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Se il mercato lo sottoprezza, va attaccato.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-rom-dybala",
+    "rank": 16,
+    "role": "A",
+    "name": "Dybala",
+    "team": "ROM",
+    "qa": 16,
+    "fvm": 110,
+    "slot": "A3",
+    "plan": "B/C",
+    "target": 35,
+    "cap": 48,
+    "starter": "Medio-alta",
+    "setPieces": "Rigori #2 + piazzati #1 Roma",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Bonus altissimi; prezzo e gestione fisica contano.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-rom-soule",
+    "rank": 17,
+    "role": "A",
+    "name": "Soulé",
+    "team": "ROM",
+    "qa": 15,
+    "fvm": 54,
+    "slot": "A3/A4",
+    "plan": "B/C",
+    "target": 25,
+    "cap": 35,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "2 gol + 1 assist in 3: forma in crescita, ma minutaggio da monitorare. Cap 35.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": true,
+    "betReason": "2 gol + 1 assist in 3: forma in crescita, ma minutaggio da monitorare. Cap 35.",
+    "betRule": "Forma ottima, ma minutaggio non ancora blindato: cap 35.",
+    "lastUpdate": {
+      "priority": "NUOVO",
+      "change": "Aggiunto alla wishlist",
+      "auctionAdvice": "2 gol + 1 assist: piano B/C",
+      "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+    }
+  },
+  {
+    "id": "a-bol-dovbyk",
+    "rank": 18,
+    "role": "A",
+    "name": "Dovbyk",
+    "team": "BOL",
+    "qa": 16,
+    "fvm": 50,
+    "slot": "A3/A4",
+    "plan": "C",
+    "target": 30,
+    "cap": 42,
+    "starter": "Alta",
+    "setPieces": "Rigori #3 Bologna",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piano C credibile.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-sas-lauriente",
+    "rank": 19,
+    "role": "A",
+    "name": "Laurientè",
+    "team": "SAS",
+    "qa": 15,
+    "fvm": 80,
+    "slot": "A3/A4",
+    "plan": "C",
+    "target": 30,
+    "cap": 42,
+    "starter": "Alta",
+    "setPieces": "Rigori #3 + piazzati #2 Sassuolo",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Bonus e titolarità.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-rom-castro-s",
+    "rank": 20,
+    "role": "A",
+    "name": "Castro S.",
+    "team": "ROM",
+    "qa": 14,
+    "fvm": 70,
+    "slot": "A3/A4",
+    "plan": "C",
+    "target": 28,
+    "cap": 40,
+    "starter": "Medio-alta",
+    "setPieces": "Rigori #3 Roma",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Alternativa con upside.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-fio-beto",
+    "rank": 21,
+    "role": "A",
+    "name": "Beto",
+    "team": "FIO",
+    "qa": 14,
+    "fvm": 47,
+    "slot": "A3/A4",
+    "plan": "C",
+    "target": 28,
+    "cap": 40,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Fiorentina",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista: valore pratico superiore alla QA.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-tor-simeone",
+    "rank": 22,
+    "role": "A",
+    "name": "Simeone",
+    "team": "TOR",
+    "qa": 14,
+    "fvm": 74,
+    "slot": "A3/A4",
+    "plan": "C",
+    "target": 28,
+    "cap": 38,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Torino",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ottimo piano B/C.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-tor-adams-c",
+    "rank": 23,
+    "role": "A",
+    "name": "Adams C.",
+    "team": "TOR",
+    "qa": 12,
+    "fvm": 31,
+    "slot": "A3/A4",
+    "plan": "B/C value",
+    "target": 20,
+    "cap": 30,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "2 gol in 3 e gerarchie in risalita su Simeone: ottimo value se sotto 30.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/torino-adams-supera-simeone-ora-il-rinnovo-497759",
+    "isBet": true,
+    "betReason": "2 gol in 3 e gerarchie in risalita su Simeone: ottimo value se sotto 30.",
+    "betRule": "Gerarchie in crescita, ma ballottaggio con Simeone resta: cap 30.",
+    "lastUpdate": {
+      "priority": "NUOVO",
+      "change": "Aggiunto alla wishlist",
+      "auctionAdvice": "2 gol in 3, gerarchie in crescita",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/torino-adams-supera-simeone-ora-il-rinnovo-497759"
+    }
+  },
+  {
+    "id": "a-laz-pinamonti",
+    "rank": 24,
+    "role": "A",
+    "name": "Pinamonti",
+    "team": "LAZ",
+    "qa": 12,
+    "fvm": 52,
+    "slot": "A4",
+    "plan": "C",
+    "target": 25,
+    "cap": 35,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Lazio",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Titolare e secondo rigorista.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-com-diao",
+    "rank": 25,
+    "role": "A",
+    "name": "Diao",
+    "team": "COM",
+    "qa": 14,
+    "fvm": 70,
+    "slot": "A3/A4",
+    "plan": "B/C",
+    "target": 25,
+    "cap": 35,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Avvio molto positivo e FVM 70: buon A3/A4 se resta sotto 35.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "MEDIA",
+      "change": "FVM salito a 70",
+      "auctionAdvice": "Buon A3/A4",
+      "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+    }
+  },
+  {
+    "id": "a-gen-colombo",
+    "rank": 26,
+    "role": "A",
+    "name": "Colombo",
+    "team": "GEN",
+    "qa": 11,
+    "fvm": 55,
+    "slot": "A4",
+    "plan": "C",
+    "target": 22,
+    "cap": 32,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Genoa",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista low/mid cost.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-cag-kevin-carlos",
+    "rank": 27,
+    "role": "A",
+    "name": "Kevin Carlos",
+    "team": "CAG",
+    "qa": 12,
+    "fvm": 30,
+    "slot": "A4",
+    "plan": "C",
+    "target": 20,
+    "cap": 30,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Cagliari",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Buon riempitivo con potenziale bonus.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-nap-santos-a",
+    "rank": 28,
+    "role": "A",
+    "name": "Santos A.",
+    "team": "NAP",
+    "qa": 14,
+    "fvm": 58,
+    "slot": "A4",
+    "plan": "C sconto",
+    "target": 10,
+    "cap": 18,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "GIALLO",
+    "returnStatus": "Lesione di medio grado al bicipite femorale: stop almeno 1 mese, rientro indicativo metà ottobre",
+    "advice": "Non è un rosso da 3 mesi, ma un mese pesa: solo forte sconto.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790",
+    "isBet": false,
+    "lastUpdate": {
+      "priority": "ALTA",
+      "change": "NUOVO INFORTUNIO: stop almeno 1 mese",
+      "auctionAdvice": "Solo forte sconto",
+      "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790"
+    }
+  },
+  {
+    "id": "a-ata-raspadori",
+    "rank": 29,
+    "role": "A",
+    "name": "Raspadori",
+    "team": "ATA",
+    "qa": 13,
+    "fvm": 67,
+    "slot": "A4",
+    "plan": "C",
+    "target": 17,
+    "cap": 26,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Piano C se resta sotto 25.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-fro-raimondo",
+    "rank": 30,
+    "role": "A",
+    "name": "Raimondo",
+    "team": "FRO",
+    "qa": 11,
+    "fvm": 55,
+    "slot": "A4/A5",
+    "plan": "Scommessa",
+    "target": 15,
+    "cap": 22,
+    "starter": "Alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "FVM salito a 55: non alzare il tetto, i gol iniziali sono già nel prezzo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728",
+    "isBet": true,
+    "betReason": "FVM salito a 55: non alzare il tetto, i gol iniziali sono già nel prezzo.",
+    "betRule": "FVM 55 dopo l'esplosione: NON alzare il cap 22.",
+    "lastUpdate": {
+      "priority": "MEDIA",
+      "change": "FVM salito a 55",
+      "auctionAdvice": "Tetto INVARIATO: non pagare i gol già fatti",
+      "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+    }
+  },
+  {
+    "id": "a-ven-adams-a",
+    "rank": 31,
+    "role": "A",
+    "name": "Adams A.",
+    "team": "VEN",
+    "qa": 11,
+    "fvm": 35,
+    "slot": "A4/A5",
+    "plan": "Scommessa",
+    "target": 14,
+    "cap": 22,
+    "starter": "Alta",
+    "setPieces": "Rigori #2 Venezia",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Titolare + rigori secondari.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-par-toure-e",
+    "rank": 32,
+    "role": "A",
+    "name": "Tourè E.",
+    "team": "PAR",
+    "qa": 11,
+    "fvm": 34,
+    "slot": "A4/A5",
+    "plan": "Scommessa",
+    "target": 14,
+    "cap": 21,
+    "starter": "Alta",
+    "setPieces": "Rigori #1 Parma",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Rigorista low cost: profilo che mi piace.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Rigorista low cost: profilo che mi piace.",
+    "betRule": "Stop tassativo a 21 crediti."
+  },
+  {
+    "id": "a-fio-gnonto",
+    "rank": 33,
+    "role": "A",
+    "name": "Gnonto",
+    "team": "FIO",
+    "qa": 7,
+    "fvm": 23,
+    "slot": "A5",
+    "plan": "Scommessa",
+    "target": 8,
+    "cap": 14,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Talento: ottimo quinto slot se non sale.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Talento: ottimo quinto slot se non sale.",
+    "betRule": "Stop tassativo a 14 crediti."
+  },
+  {
+    "id": "a-fro-ghedjemis",
+    "rank": 34,
+    "role": "A",
+    "name": "Ghedjemis",
+    "team": "FRO",
+    "qa": 8,
+    "fvm": 23,
+    "slot": "A5",
+    "plan": "Scommessa",
+    "target": 8,
+    "cap": 13,
+    "starter": "Alta",
+    "setPieces": "Piazzati #3 Frosinone",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Scommessa low cost con piazzati.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Scommessa low cost con piazzati.",
+    "betRule": "Stop tassativo a 13 crediti."
+  },
+  {
+    "id": "a-gen-osmajic",
+    "rank": 35,
+    "role": "A",
+    "name": "Osmajic",
+    "team": "GEN",
+    "qa": 8,
+    "fvm": 28,
+    "slot": "A5",
+    "plan": "Scommessa",
+    "target": 8,
+    "cap": 13,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ultimi slot, cap rigido.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Ultimi slot, cap rigido.",
+    "betRule": "Stop tassativo a 13 crediti."
+  },
+  {
+    "id": "a-fro-kvernadze",
+    "rank": 36,
+    "role": "A",
+    "name": "Kvernadze",
+    "team": "FRO",
+    "qa": 6,
+    "fvm": 24,
+    "slot": "A5/A6",
+    "plan": "Scommessa",
+    "target": 8,
+    "cap": 12,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "FVM interessante per il prezzo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "FVM interessante per il prezzo.",
+    "betRule": "Stop tassativo a 12 crediti."
+  },
+  {
+    "id": "a-ven-yeboah-j",
+    "rank": 37,
+    "role": "A",
+    "name": "Yeboah J.",
+    "team": "VEN",
+    "qa": 9,
+    "fvm": 27,
+    "slot": "A5/A6",
+    "plan": "Scommessa",
+    "target": 8,
+    "cap": 12,
+    "starter": "Alta",
+    "setPieces": "Piazzati #2 Venezia",
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Ultimo slot con bonus potenziali.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Ultimo slot con bonus potenziali.",
+    "betRule": "Stop tassativo a 12 crediti."
+  },
+  {
+    "id": "a-juv-boga",
+    "rank": 38,
+    "role": "A",
+    "name": "Boga",
+    "team": "JUV",
+    "qa": 6,
+    "fvm": 27,
+    "slot": "A5/A6",
+    "plan": "Scommessa",
+    "target": 2,
+    "cap": 4,
+    "starter": "Medio-alta",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "GIALLO",
+    "returnStatus": "Lesione di medio grado al bicipite femorale: possibile rientro metà ottobre",
+    "advice": "Un mese circa: non occupare uno slot salvo quasi regalo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  },
+  {
+    "id": "a-int-bonny",
+    "rank": 39,
+    "role": "A",
+    "name": "Bonny",
+    "team": "INT",
+    "qa": 7,
+    "fvm": 15,
+    "slot": "A6",
+    "plan": "Scommessa",
+    "target": 4,
+    "cap": 8,
+    "starter": "Variabile",
+    "setPieces": null,
+    "modifierFit": null,
+    "health": "OK",
+    "returnStatus": null,
+    "advice": "Scommessa pura da ultimo slot.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/rigoristi-serie-a",
+    "isBet": true,
+    "betReason": "Scommessa pura da ultimo slot.",
+    "betRule": "Stop tassativo a 8 crediti."
+  },
+  {
+    "id": "a-juv-yildiz",
+    "rank": 40,
+    "role": "A",
+    "name": "Yildiz",
+    "team": "JUV",
+    "qa": 21,
+    "fvm": 80,
+    "slot": "A2",
+    "plan": "No/Regalo",
+    "target": 8,
+    "cap": 15,
+    "starter": "Alta",
+    "setPieces": "Piazzati #1 Juventus",
+    "modifierFit": null,
+    "health": "ROSSO",
+    "returnStatus": "Frattura V metatarso operata; rientro fine novembre",
+    "advice": "Tre mesi: per i tuoi criteri è NO salvo regalo.",
+    "quoteSource": "https://www.fantacalcio.it/quotazioni-fantacalcio",
+    "healthSource": "https://www.fantacalcio.it/infortunati-serie-a",
+    "isBet": false
+  }
+]
+```
+
+---
+
+## `updates`
+
+```json
+[
+  {
+    "priority": "ALTA",
+    "player": "Solet",
+    "role": "D",
+    "change": "NUOVO INFORTUNIO: stop ~2 settimane",
+    "target": 9,
+    "cap": 14,
+    "auctionAdvice": "Buy-low, non eliminare",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/udinese-infortunio-solet-l-esito-degli-esami-e-i-tempi-di-recupero-497784"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Meret",
+    "role": "P",
+    "change": "NUOVO INFORTUNIO: adduttore",
+    "target": 8,
+    "cap": 12,
+    "auctionAdvice": "Solo sconto + copertura",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Santos A.",
+    "role": "A",
+    "change": "NUOVO INFORTUNIO: stop almeno 1 mese",
+    "target": 10,
+    "cap": 18,
+    "auctionAdvice": "Solo forte sconto",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Gila",
+    "role": "D",
+    "change": "RECUPERATO",
+    "target": 8,
+    "cap": 11,
+    "auctionAdvice": "Torna acquistabile",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/08_09_2026/milan-le-condizioni-di-mario-gila-in-vista-della-lazio-497676"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Oulai",
+    "role": "C",
+    "change": "RECUPERATO e convocato",
+    "target": 4,
+    "cap": 7,
+    "auctionAdvice": "Scommessa low cost",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/fiorentina-i-convocati-per-venezia-ok-atta-e-oulai-497780"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Cambiaso",
+    "role": "D",
+    "change": "Out prossimo turno, rientro dopo sosta",
+    "target": 5,
+    "cap": 9,
+    "auctionAdvice": "Solo a sconto",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770"
+  },
+  {
+    "priority": "ALTA",
+    "player": "McKennie",
+    "role": "C",
+    "change": "Condizioni migliorate; possibile convocazione",
+    "target": 11,
+    "cap": 17,
+    "auctionAdvice": "Prudenza, ma rischio breve",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Frattesi",
+    "role": "C",
+    "change": "FVM 120, 3 gol in 3",
+    "target": 22,
+    "cap": 30,
+    "auctionAdvice": "Non farti trascinare dall'hype",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Baturina",
+    "role": "C",
+    "change": "FVM salito a 155",
+    "target": 30,
+    "cap": 40,
+    "auctionAdvice": "Ora è un C2 vero",
+    "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+  },
+  {
+    "priority": "MEDIA",
+    "player": "Cissé A.",
+    "role": "C",
+    "change": "FVM salito a 40",
+    "target": 6,
+    "cap": 10,
+    "auctionAdvice": "Scommessa, ma non più nascosta",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "MEDIA",
+    "player": "Raimondo",
+    "role": "A",
+    "change": "FVM salito a 55",
+    "target": 15,
+    "cap": 22,
+    "auctionAdvice": "Tetto INVARIATO: non pagare i gol già fatti",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "MEDIA",
+    "player": "Diao",
+    "role": "A",
+    "change": "FVM salito a 70",
+    "target": 25,
+    "cap": 35,
+    "auctionAdvice": "Buon A3/A4",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Soulé",
+    "role": "A",
+    "change": "Aggiunto alla wishlist",
+    "target": 25,
+    "cap": 35,
+    "auctionAdvice": "2 gol + 1 assist: piano B/C",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Adams C.",
+    "role": "A",
+    "change": "Aggiunto alla wishlist",
+    "target": 20,
+    "cap": 30,
+    "auctionAdvice": "2 gol in 3, gerarchie in crescita",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/torino-adams-supera-simeone-ora-il-rinnovo-497759"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Goncalves P.",
+    "role": "C",
+    "change": "Aggiunto alla wishlist",
+    "target": 12,
+    "cap": 20,
+    "auctionAdvice": "C3 con upside",
+    "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Belghali",
+    "role": "D",
+    "change": "Aggiunto alla wishlist",
+    "target": 5,
+    "cap": 9,
+    "auctionAdvice": "Esterno offensivo, meno da modificatore",
+    "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Kamara H.",
+    "role": "D",
+    "change": "Aggiunto alla wishlist",
+    "target": 5,
+    "cap": 8,
+    "auctionAdvice": "2 gol ma cap rigido",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  }
+]
+```
+
+---
+
+# Implementazione consigliata in fasi
+
+Codex deve procedere senza chiedere conferme intermedie, salvo un blocco tecnico reale.
+
+## Fase 1
+- scaffold Vue/Vite/TS
+- router
+- Pinia
+- tipi
+- seed data
+- storage
+
+## Fase 2
+- Asta Live
+- budget
+- acquisti
+- giocatori presi da altri
+- filtri rapidi
+
+## Fase 3
+- Wishlist
+- Scommesse
+- Infortuni
+- Updates
+
+## Fase 4
+- backup/import
+- reset
+- responsive polish
+
+## Fase 5
+- test
+- GitHub Pages
+- README
+
+---
+
+# Nota finale per Codex
+
+L'obiettivo non è creare un gestionale complesso.
+
+Questa applicazione deve essere:
+- **rapidissima**
+- **affidabile**
+- **semplice**
+- **mobile-first**
+- utilizzabile durante un'asta dove le decisioni avvengono in pochi secondi.
+
+Priorità assoluta a:
+1. ricerca immediata
+2. visualizzazione target/tetto
+3. stato disponibile/mio/altri
+4. budget residuo
+5. slot residui
+6. informazioni infortuni
+7. zero perdita dati dopo refresh
+
+Non aggiungere funzionalità superflue prima che queste siano solide.

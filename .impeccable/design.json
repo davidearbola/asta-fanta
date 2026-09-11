@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-11T10:00:00.000Z",
+  "title": "Design System: Fantacalcio Auction Assistant",
+  "extensions": {
+    "colorMeta": {
+      "ink": { "role": "primary", "displayName": "Blu Tabellone", "canonical": "#10233e" },
+      "field": { "role": "secondary", "displayName": "Verde Campo", "canonical": "#0d744c" },
+      "stop": { "role": "tertiary", "displayName": "Rosso Stop", "canonical": "#de3e3e" },
+      "ground": { "role": "neutral", "displayName": "Terreno Freddo", "canonical": "#edf1f5" }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Titoli pagina compatti." },
+      "body": { "displayName": "Body", "purpose": "Contenuto operativo e consigli." },
+      "label": { "displayName": "Label", "purpose": "KPI, stati e metadati." }
+    },
+    "shadows": [
+      { "name": "ambient-surface", "value": "0 10px 26px rgba(16, 35, 62, .09)", "purpose": "Pannelli principali e campi." },
+      { "name": "compact-surface", "value": "0 5px 18px rgba(16, 35, 62, .07)", "purpose": "Schede giocatore." }
+    ],
+    "motion": [
+      { "name": "sheet-entry", "value": "180ms cubic-bezier(.2,.8,.2,1)", "purpose": "Ingresso singolo dell'action sheet; disattivato con reduced motion." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "720px" },
+      { "name": "desktop", "value": "1040px" },
+      { "name": "wide", "value": "1360px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Azione confermativa principale.",
+      "html": "<button class=\"ds-primary\">Conferma acquisto</button>",
+      "css": ".ds-primary{min-height:44px;padding:0 18px;border:0;border-radius:10px;background:#0d744c;color:#fff;font:800 14px system-ui;box-shadow:0 6px 16px rgba(13,116,76,.2)}.ds-primary:hover{background:#07573a}.ds-primary:focus-visible{outline:3px solid #328bd1;outline-offset:2px}"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "search-field",
+      "description": "Ricerca dominante della schermata live.",
+      "html": "<input class=\"ds-search\" placeholder=\"Cerca giocatore, squadra o ruolo…\">",
+      "css": ".ds-search{min-height:56px;width:100%;padding:0 14px;border:2px solid transparent;border-radius:14px;background:#fff;color:#10233e;font:400 16px system-ui;box-shadow:0 10px 26px rgba(16,35,62,.09)}.ds-search:focus{border-color:#2b79b3;outline:3px solid #328bd1;outline-offset:2px}"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "description": "Filtro rapido selezionabile.",
+      "html": "<button class=\"ds-chip\">Piano A</button>",
+      "css": ".ds-chip{min-height:40px;padding:0 13px;border:1px solid #cbd5e0;border-radius:999px;background:#f8fafc;color:#2b4261;font:800 13px system-ui}.ds-chip:hover,.ds-chip:focus-visible{border-color:#10233e}.ds-chip[aria-pressed=true]{border-color:#10233e;background:#10233e;color:#fff}"
+    },
+    {
+      "name": "Player Card",
+      "kind": "card",
+      "refersTo": "player-card",
+      "description": "Unità operativa mobile con soglie e stato.",
+      "html": "<article class=\"ds-card\"><strong>Giocatore</strong><p>Target 42 · Tetto 55</p></article>",
+      "css": ".ds-card{padding:14px;border-radius:14px;background:#fff;color:#10233e;font-family:system-ui;box-shadow:0 5px 18px rgba(16,35,62,.07)}.ds-card strong{font-size:18px}.ds-card p{margin:8px 0 0;color:#2b4261}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Il Tabellone Cambio",
+    "overview": "Cifre stabili, soglie leggibili e azioni senza interpretazione. Denso nel confronto, quieto nella decisione.",
+    "keyCharacteristics": ["Numeri tabulari", "Densità controllata", "Target e Tetto affiancati", "Stato multimodale"],
+    "rules": [
+      { "name": "La regola del segnale", "body": "Ogni colore di stato è accompagnato da testo o numero.", "section": "colors" },
+      { "name": "La regola del numero stabile", "body": "Le misure d'asta usano cifre tabulari.", "section": "typography" }
+    ],
+    "dos": ["Mantenere Target e Tetto affiancati.", "Usare tap target di almeno 44px.", "Conservare la stessa gerarchia tra card e tabella."],
+    "donts": ["Non affidare stati al solo colore.", "Non introdurre decorazione che competa con i dati.", "Non trasformare target e tetto in blocchi applicativi."]
+  }
+}

@@ -1,0 +1,172 @@
+[
+  {
+    "priority": "ALTA",
+    "player": "Solet",
+    "role": "D",
+    "change": "NUOVO INFORTUNIO: stop ~2 settimane",
+    "target": 9,
+    "cap": 14,
+    "auctionAdvice": "Buy-low, non eliminare",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/udinese-infortunio-solet-l-esito-degli-esami-e-i-tempi-di-recupero-497784"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Meret",
+    "role": "P",
+    "change": "NUOVO INFORTUNIO: adduttore",
+    "target": 8,
+    "cap": 12,
+    "auctionAdvice": "Solo sconto + copertura",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Santos A.",
+    "role": "A",
+    "change": "NUOVO INFORTUNIO: stop almeno 1 mese",
+    "target": 10,
+    "cap": 18,
+    "auctionAdvice": "Solo forte sconto",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/napoli-infortuni-meret-e-alisson-santos-l-esito-degli-esami-e-i-tempi-di-recupero-497790"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Gila",
+    "role": "D",
+    "change": "RECUPERATO",
+    "target": 8,
+    "cap": 11,
+    "auctionAdvice": "Torna acquistabile",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/08_09_2026/milan-le-condizioni-di-mario-gila-in-vista-della-lazio-497676"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Oulai",
+    "role": "C",
+    "change": "RECUPERATO e convocato",
+    "target": 4,
+    "cap": 7,
+    "auctionAdvice": "Scommessa low cost",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/fiorentina-i-convocati-per-venezia-ok-atta-e-oulai-497780"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Cambiaso",
+    "role": "D",
+    "change": "Out prossimo turno, rientro dopo sosta",
+    "target": 5,
+    "cap": 9,
+    "auctionAdvice": "Solo a sconto",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770"
+  },
+  {
+    "priority": "ALTA",
+    "player": "McKennie",
+    "role": "C",
+    "change": "Condizioni migliorate; possibile convocazione",
+    "target": 11,
+    "cap": 17,
+    "auctionAdvice": "Prudenza, ma rischio breve",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/juventus-domenica-c-e-il-sassuolo-le-ultime-sugli-infortunati-497770"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Frattesi",
+    "role": "C",
+    "change": "FVM 120, 3 gol in 3",
+    "target": 22,
+    "cap": 30,
+    "auctionAdvice": "Non farti trascinare dall'hype",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "ALTA",
+    "player": "Baturina",
+    "role": "C",
+    "change": "FVM salito a 155",
+    "target": 30,
+    "cap": 40,
+    "auctionAdvice": "Ora è un C2 vero",
+    "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+  },
+  {
+    "priority": "MEDIA",
+    "player": "Cissé A.",
+    "role": "C",
+    "change": "FVM salito a 40",
+    "target": 6,
+    "cap": 10,
+    "auctionAdvice": "Scommessa, ma non più nascosta",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "MEDIA",
+    "player": "Raimondo",
+    "role": "A",
+    "change": "FVM salito a 55",
+    "target": 15,
+    "cap": 22,
+    "auctionAdvice": "Tetto INVARIATO: non pagare i gol già fatti",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "MEDIA",
+    "player": "Diao",
+    "role": "A",
+    "change": "FVM salito a 70",
+    "target": 25,
+    "cap": 35,
+    "auctionAdvice": "Buon A3/A4",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Soulé",
+    "role": "A",
+    "change": "Aggiunto alla wishlist",
+    "target": 25,
+    "cap": 35,
+    "auctionAdvice": "2 gol + 1 assist: piano B/C",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Adams C.",
+    "role": "A",
+    "change": "Aggiunto alla wishlist",
+    "target": 20,
+    "cap": 30,
+    "auctionAdvice": "2 gol in 3, gerarchie in crescita",
+    "source": "https://www.fantacalcio.it/news/calcio-italia/10_09_2026/torino-adams-supera-simeone-ora-il-rinnovo-497759"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Goncalves P.",
+    "role": "C",
+    "change": "Aggiunto alla wishlist",
+    "target": 12,
+    "cap": 20,
+    "auctionAdvice": "C3 con upside",
+    "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Belghali",
+    "role": "D",
+    "change": "Aggiunto alla wishlist",
+    "target": 5,
+    "cap": 9,
+    "auctionAdvice": "Esterno offensivo, meno da modificatore",
+    "source": "https://www.fantacalcio.it/quotazioni-fantacalcio"
+  },
+  {
+    "priority": "NUOVO",
+    "player": "Kamara H.",
+    "role": "D",
+    "change": "Aggiunto alla wishlist",
+    "target": 5,
+    "cap": 8,
+    "auctionAdvice": "2 gol ma cap rigido",
+    "source": "https://www.fantacalcio.it/rubriche/fantaffari/10_09_2026/fantaffari-fantallenatore-quotazioni-ed-analisi-dopo-la-terza-giornata-497728"
+  }
+]
